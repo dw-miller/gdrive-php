@@ -18,6 +18,17 @@ if ($isAuthRedirect) {
   } else {
     $client->setAccessToken($_SESSION['access_token']);
   }
+
+  if ($client->isAccessTokenExpired()) {
+    if ($client->getRefreshToken()) {
+      $client->fetchAccessTokenWithRefreshToken($client->getRefreshToken());
+    } else {
+      $authUrl = $client->createAuthUrl();
+      header('Location: ' . $authUrl);
+      exit();
+    }
+  }
+
 } else {
   $authUrl = $client->createAuthUrl();
   header('Location: ' . $authUrl);

@@ -1,21 +1,65 @@
 <?php
 
 class FormHandler {
+  const ROOT_FOLDER_NAME = 'TestPHP';
+  const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+
   private $_post;
   private $_errors;
 
   public function __construct($data) {
-    $this->_post    = $data['post'];
-    $this->_files   = $data['files'];
-    $this->_service = $data['gdrive_service'];
-    $this->_errors  = array();
+    $this->_errors       = array();
+    $this->_files        = $data['files'];
+    $this->_post         = $data['post'];
+    $this->_rootFolderId = '';
+    $this->_service      = $data['gdrive_service'];
   }
 
   public function execute() {
     $this->_validate();
-    $folder = $this->_createFolder(array('filename' => $this->_post['filename']));
+    $this->_createInitialFolder();
+
+    // creates folder from form field 'filename'
+    $folder = $this->_createFolder(array(
+      'filename' => $this->_post['filename'],
+      'parents' => array($this->_rootFolderId)
+    ));
+
     $this->_createFile($folder->id, $this->_files['pdf_file']);
+
     echo 'Successfully uploaded file!';
+  }
+
+  private function _createInitialFolder() {
+    $pageToken = null;
+    $foundFile = null;
+    $query     = "mimeType='" . self::FOLDER_MIME_TYPE . "' and name='" . self::ROOT_FOLDER_NAME . "' and trashed=false";
+
+    do {
+      $response = $this->_service->files->listFiles(array(
+        'q' => $query,
+        'spaces' => 'drive',
+        'pageToken' => $pageToken,
+        'fields' => 'nextPageToken, files(id, name)'
+      ));
+
+      foreach ($response->files as $file) {
+        $foundFile = $file;
+      }
+
+      $pageToken = $response->pageToken;
+    } while ($pageToken !== null);
+
+    var_dump($foundFile);
+
+    // if folder does not exist
+    if ($foundFile === null) {
+      $rootFolder = $this->_createFolder(array('filename' => self::ROOT_FOLDER_NAME));
+    } else {
+      $rootFolder = $foundFile;
+    }
+
+    $this->_rootFolderId = $rootFolder->id;
   }
 
   private function _createFile($folderId, $file) {
@@ -30,16 +74,21 @@ class FormHandler {
       'uploadType' => 'multipart',
       'fields' => 'id'
     ));
+
     return $createdFile;
   }
 
   private function _createFolder($options) {
-    $filename = $options['filename'];
+    $filename = isset($options['filename']) ? $options['filename'] : null;
+    $parents = isset($options['parents']) ? $options['parents'] : null;
     $fileMetaData = new Google_Service_Drive_DriveFile(array(
       'name' => $filename,
-      'mimeType' => 'application/vnd.google-apps.folder'
+      'mimeType' => self::FOLDER_MIME_TYPE,
+      'parents' => $parents
     ));
-    $file = $this->_service->files->create($fileMetaData, array('fields' => 'id'));
+
+     $file = $this->_service->files->create($fileMetaData, array('fields' => 'id'));
+
     return $file;
   }
 
